@@ -1,0 +1,254 @@
+#include<stdio.h>
+#include<stdlib.h>
+#include<unistd.h>
+#include<netdb.h>
+#include<arpa/inet.h>
+#include<string.h>
+#include<errno.h>
+#include<openssl/err.h>
+#include<openssl/ssl.h>
+
+typedef struct FlashyHandle {
+    unsigned int socket;
+    char *hostname;
+    SSL_CTX *ctx;
+    SSL *ssl;
+    char body[300000];
+} FlashyHandle;
+
+void flashy_connect(FlashyHandle *fh, char *hostname)
+{
+    char *port = "443";
+    fh->hostname = hostname;
+
+    SSL_library_init();
+    OpenSSL_add_all_algorithms();
+    SSL_load_error_strings();
+
+    fh->ctx = SSL_CTX_new(TLS_client_method());
+    if (!fh->ctx) {
+        fprintf(stderr, "SSL_CTX_new() failed.\n");
+        exit(1);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *peer_address;
+    if (getaddrinfo(hostname, port, &hints, &peer_address)) {
+        fprintf(stderr, "getaddrinfo() failed. (%d)\n", errno);
+        exit(1);
+    }
+
+    fh->socket = socket(peer_address->ai_family, peer_address->ai_socktype, peer_address->ai_protocol);
+    if (fh->socket < 3) {
+        fprintf(stderr, "socke´t() failed. (%d)\n", errno);
+        exit(1);
+    }
+
+    if (connect(fh->socket, peer_address->ai_addr, peer_address->ai_addrlen)) {
+        fprintf(stderr, "connect() failed. (%d)\n", errno);
+        exit(1);
+    }
+    freeaddrinfo(peer_address);
+
+    fh->ssl = SSL_new(fh->ctx);
+    if (!fh->ssl) {
+        fprintf(stderr, "SSL_new() failed.\n");
+        exit(1);
+    }
+
+    if (!SSL_set_tlsext_host_name(fh->ssl, hostname)) {
+        fprintf(stderr, "SSL_set_tlsext_host_name() failed.\n");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    SSL_set_fd(fh->ssl, fh->socket);
+    if (SSL_connect(fh->ssl) == -1) {
+        fprintf(stderr, "SSL_connect() failed.\n");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    printf ("SSL/TLS using %s\n", SSL_get_cipher(fh->ssl));
+
+    X509 *cert = SSL_get_peer_certificate(fh->ssl);
+    if (!cert) {
+        fprintf(stderr, "SSL_get_peer_certificate() failed.\n");
+        exit(1);
+    }
+
+    char *tmp;
+    if ((tmp = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0))) {
+        printf("subject: %s\n", tmp);
+        OPENSSL_free(tmp);
+    }
+
+    if ((tmp = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0))) {
+        printf("issuer: %s\n", tmp);
+        OPENSSL_free(tmp);
+    }
+
+    X509_free(cert);
+}
+
+void flashy_scrap(FlashyHandle *fh, char *path)
+{
+    *fh->body = 0;
+    char buffer[2048];
+
+    sprintf(buffer, "GET %s HTTP/1.1\r\n", path);
+    sprintf(buffer + strlen(buffer), "Host: %s\r\n", fh->hostname);
+    sprintf(buffer + strlen(buffer), "Connection: close\r\n");
+    sprintf(buffer + strlen(buffer), "User-Agent: https_simple\r\n");
+    sprintf(buffer + strlen(buffer), "\r\n");
+
+    SSL_write(fh->ssl, buffer, strlen(buffer));
+    printf("Sent Headers:\n%s", buffer);
+
+    while(1) {
+        int bytes_received = SSL_read(fh->ssl, buffer, sizeof(buffer));
+        if (bytes_received < 1) {
+            printf("\nConnection closed by peer.\n");
+            break;
+        }
+        strncpy(fh->body + strlen(fh->body), buffer, strlen(buffer));
+    }
+}
+
+void flashy_free(FlashyHandle *fh)
+{
+    printf("\nClosing socket...\n");
+    SSL_shutdown(fh->ssl);
+    close(fh->socket);
+    SSL_free(fh->ssl);
+    SSL_CTX_free(fh->ctx);
+}
+
+struct Tense {
+    char person[50];
+    char verb_conj[100];
+    char person_add[100];
+} tense_present[6], tense_imparfait[6], tense_futur_simple[6], tense_passe_compose[6];
+
+
+void tense_print(struct Tense *t)
+{
+    int i;
+    for (i = 0; i < 6; i++)
+        printf("%s %s %s\n", t[i].person, t[i].person_add, t[i].verb_conj);
+    puts("-----------\n");
+}
+
+void brackets_remove(char *str)
+{
+    char *ptr;
+    char *end;
+    ptr = strchr(str, '(');
+    if (!ptr)
+        return;
+    end = strchr(str, ')');
+    if (!end)
+        return;
+    strcpy(ptr, end + 1);
+}
+
+int main(int argc, char **argv)
+{
+    FlashyHandle fh;
+    flashy_connect(&fh, "de.pons.com");
+    flashy_scrap(&fh, "/verbtabellen/franz%C3%B6sisch/parler");
+
+    char *ptr = strstr(fh.body, "Indicatif");
+    char *end;
+    /* tense present */
+    ptr = strstr(ptr, "Présent");
+
+    int i = 0;
+    ptr = strstr(ptr, "<tbody") + 1;
+    while (*(ptr = strchr(ptr, '<') + 2) == 'r') {
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_present[i].person, ptr, end - ptr);
+        ptr = strstr(ptr, "<span") + 1;
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_present[i].verb_conj, ptr, end - ptr);
+        brackets_remove(tense_present[i].verb_conj);
+        ptr = strstr(ptr, "</tr") + 1;
+        i++;
+    }
+    tense_print(tense_present);
+
+    /* Imparfait */
+    ptr = strstr(ptr, "Imparfait");
+
+    i = 0;
+    ptr = strstr(ptr, "<tbody") + 1;
+    while (*(ptr = strchr(ptr, '<') + 2) == 'r') {
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_imparfait[i].person, ptr, end - ptr);
+        ptr = strstr(ptr, "<span") + 1;
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_imparfait[i].verb_conj, ptr, end - ptr);
+        brackets_remove(tense_imparfait[i].verb_conj);
+        ptr = strstr(ptr, "</tr") + 1;
+        i++;
+    }
+    tense_print(tense_imparfait);
+
+    /* Futer simple */
+    ptr = strstr(ptr, "Futur simple");
+
+    i = 0;
+    ptr = strstr(ptr, "<tbody") + 1;
+    while (*(ptr = strchr(ptr, '<') + 2) == 'r') {
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_futur_simple[i].person, ptr, end - ptr);
+        ptr = strstr(ptr, "<span") + 1;
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_futur_simple[i].verb_conj, ptr, end - ptr);
+        brackets_remove(tense_futur_simple[i].verb_conj);
+        ptr = strstr(ptr, "</tr") + 1;
+        i++;
+    }
+    tense_print(tense_futur_simple);
+
+    /* Passé Composeé */
+    ptr = strstr(ptr, "Passé composé");
+    i = 0;
+    ptr = strstr(ptr, "<tbody") + 1;
+    while (*(ptr = strchr(ptr, '<') + 2) == 'r') {
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_passe_compose[i].person, ptr, end - ptr);
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_passe_compose[i].person_add, ptr, end - ptr);
+        ptr = strstr(ptr, "<span") + 1;
+        ptr = strstr(ptr, "<span");
+        ptr = strchr(ptr, '>') + 1;
+        end = strchr(ptr, '<');
+        strncpy(tense_passe_compose[i].verb_conj, ptr, end - ptr);
+        brackets_remove(tense_passe_compose[i].verb_conj);
+        ptr = strstr(ptr, "</tr") + 1;
+        i++;
+    }
+    tense_print(tense_passe_compose);
+
+    flashy_free(&fh);
+    return 0;
+}
