@@ -477,9 +477,7 @@ void anki_deck_card_append(char *verb)
     /* manipulate verb */
     if (strcmp(&verb[strlen(verb) - 2], "re") == 0) {
         verb[strlen(verb) - 1] = 0;
-    }
-
-    if (strcmp(&verb[strlen(verb) - 3], "oir") == 0) {
+    } else if (strcmp(&verb[strlen(verb) - 3], "oir") == 0) {
         verb[strlen(verb) - 3] = 'r';
         verb[strlen(verb) - 2] = 0;
     }
@@ -541,6 +539,29 @@ void anki_deck_card_append(char *verb)
     fprintf(stdout, "-> anki card created\n");
 }
 
+void unicode_replace(char *str, char *search, char *replace)
+{
+    str = strstr(str, search);
+    if (!str)
+        return;
+
+    int str_len = strlen(str);
+    int search_len = strlen(search);
+    int replace_len = strlen(replace);
+
+    strncpy(str + replace_len, str + search_len, strlen(str + search_len));
+    strncpy(str, replace, replace_len);
+    *(str + (str_len - search_len) + replace_len) = 0;
+}
+
+void verb_unicode(char *verb)
+{
+    unicode_replace(verb, "&#233;", "é");
+    unicode_replace(verb, "&#232;", "è");
+    unicode_replace(verb, "&#234;", "ê");
+    unicode_replace(verb, "&#238;", "î");
+}
+
 void verb_scrap(char *verb)
 {
     tense_clear();
@@ -571,6 +592,7 @@ void verb_scrap(char *verb)
         end = strchr(similar_verb, '<');
         strncpy(verb, similar_verb, end - similar_verb);
         verb[end - similar_verb] = 0;
+        verb_unicode(verb);
         fprintf(stdout, "-> similar verb was found %s\n", verb);
     }
 
@@ -641,6 +663,7 @@ void verb_scrap(char *verb)
         i++;
     }
     tense_clean(tense_futur_simple);
+    tense_print(tense_futur_simple);
 
     /* Passé Composeé */
     ptr = strstr(ptr, "Passé composé");
@@ -671,9 +694,8 @@ void verb_scrap(char *verb)
 int main(void)
 {
 #if 0
-    char verb[150] = "aller";
+    char verb[150] = "completer";
     verb_scrap(verb);
-    tense_print(tense_passe_compose);
 #else
     FILE *f = fopen("verb_list.txt", "r");
     char verb[150];
