@@ -8,128 +8,6 @@
 #include<openssl/err.h>
 #include<openssl/ssl.h>
 
-typedef struct FlashyHandle {
-    unsigned int socket;
-    char *hostname;
-    SSL_CTX *ctx;
-    SSL *ssl;
-    char body[300000];
-} FlashyHandle;
-
-void flashy_connect(FlashyHandle *fh, char *hostname)
-{
-    char *port = "443";
-    fh->hostname = hostname;
-
-    SSL_library_init();
-    OpenSSL_add_all_algorithms();
-    SSL_load_error_strings();
-
-    fh->ctx = SSL_CTX_new(TLS_client_method());
-    if (!fh->ctx) {
-        fprintf(stderr, "SSL_CTX_new() failed.\n");
-        exit(1);
-    }
-
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo *peer_address;
-    if (getaddrinfo(hostname, port, &hints, &peer_address)) {
-        fprintf(stderr, "getaddrinfo() failed. (%d)\n", errno);
-        exit(1);
-    }
-
-    fh->socket = socket(peer_address->ai_family, peer_address->ai_socktype, peer_address->ai_protocol);
-    if (fh->socket < 3) {
-        fprintf(stderr, "socke´t() failed. (%d)\n", errno);
-        exit(1);
-    }
-
-    if (connect(fh->socket, peer_address->ai_addr, peer_address->ai_addrlen)) {
-        fprintf(stderr, "connect() failed. (%d)\n", errno);
-        exit(1);
-    }
-    freeaddrinfo(peer_address);
-
-    fh->ssl = SSL_new(fh->ctx);
-    if (!fh->ssl) {
-        fprintf(stderr, "SSL_new() failed.\n");
-        exit(1);
-    }
-
-    if (!SSL_set_tlsext_host_name(fh->ssl, hostname)) {
-        fprintf(stderr, "SSL_set_tlsext_host_name() failed.\n");
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-
-    SSL_set_fd(fh->ssl, fh->socket);
-    if (SSL_connect(fh->ssl) == -1) {
-        fprintf(stderr, "SSL_connect() failed.\n");
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-
-    printf ("SSL/TLS using %s\n", SSL_get_cipher(fh->ssl));
-
-    X509 *cert = SSL_get_peer_certificate(fh->ssl);
-    if (!cert) {
-        fprintf(stderr, "SSL_get_peer_certificate() failed.\n");
-        exit(1);
-    }
-
-    char *tmp;
-    if ((tmp = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0))) {
-        printf("subject: %s\n", tmp);
-        OPENSSL_free(tmp);
-    }
-
-    if ((tmp = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0))) {
-        printf("issuer: %s\n", tmp);
-        OPENSSL_free(tmp);
-    }
-
-    X509_free(cert);
-}
-
-void flashy_scrap(FlashyHandle *fh, char *path)
-{
-    char buffer[2048] = { 0 };
-
-    sprintf(buffer, "GET %s HTTP/1.1\r\n", path);
-    sprintf(buffer + strlen(buffer), "Host: %s\r\n", fh->hostname);
-    sprintf(buffer + strlen(buffer), "Connection: close\r\n");
-    sprintf(buffer + strlen(buffer), "User-Agent: https_simple\r\n");
-    sprintf(buffer + strlen(buffer), "\r\n");
-
-    SSL_write(fh->ssl, buffer, strlen(buffer));
-    printf("Sent Headers:\n%s", buffer);
-
-    unsigned int offset = 0;
-    while(1) {
-        int bytes_received = SSL_read(fh->ssl, buffer, sizeof(buffer));
-        if (bytes_received < 1) {
-            /*
-            printf("\nConnection closed by peer.\n");
-            */
-            break;
-        }
-        strncpy(fh->body + offset, buffer, bytes_received);
-        offset += bytes_received;
-    }
-    fh->body[offset] = 0;
-}
-
-void flashy_free(FlashyHandle *fh)
-{
-    printf("\nClosing socket...\n");
-    SSL_shutdown(fh->ssl);
-    close(fh->socket);
-    SSL_free(fh->ssl);
-    SSL_CTX_free(fh->ctx);
-}
-
 struct Tense {
     char person[50];
     char verb_conj[100];
@@ -663,7 +541,6 @@ void verb_scrap(char *verb)
         i++;
     }
     tense_clean(tense_futur_simple);
-    tense_print(tense_futur_simple);
 
     /* Passé Composeé */
     ptr = strstr(ptr, "Passé composé");
