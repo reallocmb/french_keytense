@@ -17,9 +17,9 @@ struct Tense {
 void tense_clear(void)
 {
     memset(tense_present, 0, sizeof(tense_present));
-    memset(tense_imparfait, 0, sizeof(tense_present));
-    memset(tense_futur_simple, 0, sizeof(tense_present));
-    memset(tense_passe_compose, 0, sizeof(tense_present));
+    memset(tense_imparfait, 0, sizeof(tense_imparfait));
+    memset(tense_futur_simple, 0, sizeof(tense_futur_simple));
+    memset(tense_passe_compose, 0, sizeof(tense_passe_compose));
 }
 
 
@@ -487,7 +487,7 @@ void verb_scrap(char *verb)
 
     int i = 0;
     ptr = strstr(ptr, "<ul") + 1;
-    while (*(ptr = strchr(ptr, '<') + 1) == 'l') {
+    while (*(ptr = strchr(ptr, '<') + 1) == 'l' && i < 6) {
         ptr = strstr(ptr, "<i");
         ptr = strchr(ptr, '>') + 1;
         end = strchr(ptr, '<');
@@ -507,7 +507,7 @@ void verb_scrap(char *verb)
 
     i = 0;
     ptr = strstr(ptr, "<ul") + 1;
-    while (*(ptr = strchr(ptr, '<') + 1) == 'l') {
+    while (*(ptr = strchr(ptr, '<') + 1) == 'l' && i < 6) {
         ptr = strstr(ptr, "<i");
         ptr = strchr(ptr, '>') + 1;
         end = strchr(ptr, '<');
@@ -527,7 +527,7 @@ void verb_scrap(char *verb)
 
     i = 0;
     ptr = strstr(ptr, "<ul") + 1;
-    while (*(ptr = strchr(ptr, '<') + 1) == 'l') {
+    while (*(ptr = strchr(ptr, '<') + 1) == 'l' && i < 6) {
         ptr = strstr(ptr, "<i");
         ptr = strchr(ptr, '>') + 1;
         end = strchr(ptr, '<');
@@ -571,8 +571,9 @@ void verb_scrap(char *verb)
 int main(void)
 {
 #if 0
-    char verb[150] = "completer";
+    char verb[150] = "connaitre";
     verb_scrap(verb);
+    tense_print(tense_passe_compose);
 #else
     FILE *f = fopen("verb_list.txt", "r");
     char verb[150];
