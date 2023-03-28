@@ -430,6 +430,8 @@ void unicode_replace(char *str, char *search, char *replace)
     strncpy(str + replace_len, str + search_len, strlen(str + search_len));
     strncpy(str, replace, replace_len);
     *(str + (str_len - search_len) + replace_len) = 0;
+
+    unicode_replace(str, search, replace);
 }
 
 void verb_unicode(char *verb)
@@ -570,8 +572,8 @@ void verb_scrap(char *verb)
 
 int main(void)
 {
-#if 0
-    char verb[150] = "connaitre";
+#if 1
+    char verb[150] = "preferer";
     verb_scrap(verb);
     tense_print(tense_passe_compose);
 #else
