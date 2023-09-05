@@ -572,8 +572,8 @@ void verb_scrap(char *verb)
 
 int main(void)
 {
-#if 1
-    char verb[150] = "preferer";
+#if 0
+    char verb[150] = "finir";
     verb_scrap(verb);
     tense_print(tense_passe_compose);
 #else
